@@ -28,7 +28,18 @@ export function useCanvas() {
   const [textGradients, setTextGradients] = useState<(TextGradient | undefined)[]>([undefined]);
 
   const [, setRenderTick] = useState(0);
-  const tick = useCallback(() => setRenderTick((n) => n + 1), []);
+  const tick = useCallback(() => {
+    setRenderTick((n) => n + 1);
+    setTimeout(() => {
+      const canvas = fabricRef.current;
+      if (!canvas || isUndoRedoRef.current) return;
+      const json = JSON.stringify(canvas.toJSON());
+      historyRef.current = historyRef.current.slice(0, historyIndexRef.current + 1);
+      historyRef.current.push(json);
+      if (historyRef.current.length > 30) historyRef.current.shift();
+      historyIndexRef.current = historyRef.current.length - 1;
+    }, 100);
+  }, []);
 
   const textConfigsRef = useRef<TextConfig[]>([{ ...DEFAULT_TEXT }]);
   const logoConfigRef = useRef<LogoConfig>({ ...DEFAULT_LOGO });
@@ -43,6 +54,9 @@ export function useCanvas() {
   const imagePaddingRef = useRef(0);
   const bgColorRef = useRef("#1a1a1a");
   const canvasSizeRef = useRef({ width: 1080, height: 1080 });
+  const historyRef = useRef<string[]>([]);
+  const historyIndexRef = useRef(-1);
+  const isUndoRedoRef = useRef(false);
 
   imagePaddingRef.current = imagePadding;
   bgColorRef.current = bgColor;
@@ -376,6 +390,113 @@ export function useCanvas() {
     if (obj) { fabricRef.current?.setActiveObject(obj); fabricRef.current?.renderAll(); }
   }, []);
 
+  /* ── Undo / Redo ── */
+
+  const undo = useCallback(() => {
+    const canvas = fabricRef.current;
+    if (!canvas || historyIndexRef.current <= 0) return;
+    isUndoRedoRef.current = true;
+    historyIndexRef.current--;
+    const json = historyRef.current[historyIndexRef.current];
+    canvas.loadFromJSON(JSON.parse(json)).then(() => {
+      canvas.renderAll();
+      const objects = canvas.getObjects();
+      textObjectsRef.current = objects.filter(
+        (o): o is fabric.Textbox => o instanceof fabric.Textbox
+      );
+      textConfigsRef.current = textObjectsRef.current.map((obj, i) => {
+        const base = textConfigsRef.current[i] || DEFAULT_TEXT;
+        return readTextConfig(obj, base, textGradients[i]);
+      });
+      isUndoRedoRef.current = false;
+      setRenderTick((n) => n + 1);
+    });
+  }, [textGradients]);
+
+  const redo = useCallback(() => {
+    const canvas = fabricRef.current;
+    if (!canvas || historyIndexRef.current >= historyRef.current.length - 1) return;
+    isUndoRedoRef.current = true;
+    historyIndexRef.current++;
+    const json = historyRef.current[historyIndexRef.current];
+    canvas.loadFromJSON(JSON.parse(json)).then(() => {
+      canvas.renderAll();
+      const objects = canvas.getObjects();
+      textObjectsRef.current = objects.filter(
+        (o): o is fabric.Textbox => o instanceof fabric.Textbox
+      );
+      textConfigsRef.current = textObjectsRef.current.map((obj, i) => {
+        const base = textConfigsRef.current[i] || DEFAULT_TEXT;
+        return readTextConfig(obj, base, textGradients[i]);
+      });
+      isUndoRedoRef.current = false;
+      setRenderTick((n) => n + 1);
+    });
+  }, [textGradients]);
+
+  /* ── Duplicate Text Layer ── */
+
+  const duplicateTextLayer = useCallback(() => {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    const idx = selectedTextIdx;
+    const obj = textObjectsRef.current[idx];
+    if (!obj) return;
+    const base = textConfigsRef.current[idx] || DEFAULT_TEXT;
+    const config = readTextConfig(obj, base, textGradients[idx]);
+    const nc: TextConfig = { ...config, y: config.y + 50 };
+    textConfigsRef.current.push(nc);
+    setTextGradients(prev => [...prev, textGradients[idx]]);
+    addTextToCanvas(canvas, nc, textObjectsRef.current.length);
+    setSelectedTextIdx(textObjectsRef.current.length - 1);
+    canvas.renderAll();
+    tick();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tick, selectedTextIdx, textGradients]);
+
+  /* ── Deselect All ── */
+
+  const deselectAll = useCallback(() => {
+    const canvas = fabricRef.current; if (!canvas) return;
+    canvas.discardActiveObject();
+    canvas.renderAll();
+  }, []);
+
+  /* ── Nudge Selected Object ── */
+
+  const nudgeSelected = useCallback((dx: number, dy: number) => {
+    const canvas = fabricRef.current;
+    const obj = canvas?.getActiveObject();
+    if (!canvas || !obj) return;
+    obj.set({ left: (obj.left ?? 0) + dx, top: (obj.top ?? 0) + dy });
+    obj.setCoords();
+    canvas.renderAll();
+    tick();
+  }, [tick]);
+
+  /* ── Align to Canvas ── */
+
+  const alignTextToCanvas = useCallback((alignment: string) => {
+    const canvas = fabricRef.current;
+    const obj = canvas?.getActiveObject();
+    if (!canvas || !obj) return;
+    const w = canvasSizeRef.current.width;
+    const h = canvasSizeRef.current.height;
+    const objW = (obj.width ?? 0) * (obj.scaleX ?? 1);
+    const objH = (obj.height ?? 0) * (obj.scaleY ?? 1);
+    switch (alignment) {
+      case 'left': obj.set({ left: 20 }); break;
+      case 'center-h': obj.set({ left: (w - objW) / 2 }); break;
+      case 'right': obj.set({ left: w - objW - 20 }); break;
+      case 'top': obj.set({ top: 20 }); break;
+      case 'center-v': obj.set({ top: (h - objH) / 2 }); break;
+      case 'bottom': obj.set({ top: h - objH - 20 }); break;
+    }
+    obj.setCoords();
+    canvas.renderAll();
+    tick();
+  }, [tick]);
+
   return {
     canvasRef, containerRef, fabricRef,
     canvasSize, changeCanvasSize,
@@ -394,5 +515,6 @@ export function useCanvas() {
     tick,
     makeFadeRect: makeFadeRect,
     makeTextbox: makeTextbox,
+    undo, redo, duplicateTextLayer, alignTextToCanvas, deselectAll, nudgeSelected, canvasSizeRef,
   };
 }

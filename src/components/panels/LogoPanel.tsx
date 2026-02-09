@@ -17,7 +17,7 @@ export default function LogoPanel({ logoEnabled, logoScale, logoOpacity, onToggl
     <div>
       <div className="flex items-center justify-between">
         <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Logo</Label>
-        <input type="checkbox" checked={logoEnabled} onChange={e => onToggle(e.target.checked)} className="accent-primary" />
+        <button className={`px-2 py-0.5 rounded text-[10px] transition-colors ${logoEnabled ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`} onClick={() => onToggle(!logoEnabled)}>{logoEnabled ? "On" : "Off"}</button>
       </div>
       {logoEnabled && (
         <div className="space-y-1 mt-1">

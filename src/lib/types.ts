@@ -121,3 +121,101 @@ export const CANVAS_PRESETS = [
   { label: "Twitter", short: "X", width: 1200, height: 675 },
   { label: "Facebook", short: "FB", width: 1200, height: 630 },
 ];
+
+/* ── Text Style Presets ── */
+
+export interface TextPreset {
+  name: string;
+  label: string;
+  config: Partial<TextConfig>;
+}
+
+export const TEXT_PRESETS: TextPreset[] = [
+  {
+    name: "Title", label: "Title",
+    config: {
+      fontSize: 72, fontFamily: "Bebas Neue", fontWeight: "normal",
+      fill: "#ffffff", textTransform: "uppercase", charSpacing: 50,
+      shadow: true, textAlign: "center", width: 900,
+    },
+  },
+  {
+    name: "Subtitle", label: "Subtitle",
+    config: {
+      fontSize: 32, fontFamily: "Montserrat", fontWeight: "600",
+      fill: "#ffffff", textTransform: "none", textAlign: "center", width: 800,
+    },
+  },
+  {
+    name: "Score", label: "Score",
+    config: {
+      fontSize: 96, fontFamily: "JetBrains Mono", fontWeight: "bold",
+      fill: "#ffffff", textTransform: "none", textAlign: "center",
+      charSpacing: 100, shadow: true, width: 600,
+    },
+  },
+  {
+    name: "Caption", label: "Caption",
+    config: {
+      fontSize: 24, fontFamily: "DM Sans", fontWeight: "normal",
+      fill: "#ffffff", textTransform: "none", textAlign: "center",
+      lineHeight: 1.6, width: 800, opacity: 0.9,
+    },
+  },
+  {
+    name: "Quote", label: "Quote",
+    config: {
+      fontSize: 42, fontFamily: "Playfair Display", fontWeight: "normal",
+      fill: "#ffffff", fontStyle: "italic" as const, textTransform: "none",
+      textAlign: "center", lineHeight: 1.5, width: 800,
+    },
+  },
+  {
+    name: "Highlight", label: "Highlight",
+    config: {
+      fontSize: 48, fontFamily: "Anton", fontWeight: "normal",
+      fill: "#FFD700", textTransform: "uppercase", textAlign: "center",
+      charSpacing: 30, shadow: true, width: 800,
+    },
+  },
+  {
+    name: "Breaking", label: "Breaking",
+    config: {
+      fontSize: 64, fontFamily: "Oswald", fontWeight: "bold",
+      fill: "#ff3333", textTransform: "uppercase", textAlign: "center",
+      charSpacing: 80, shadow: true, width: 900,
+      strokeColor: "#ffffff", strokeWidth: 2,
+    },
+  },
+  {
+    name: "Minimal", label: "Minimal",
+    config: {
+      fontSize: 28, fontFamily: "Space Grotesk", fontWeight: "300",
+      fill: "#ffffff", textTransform: "none", textAlign: "left",
+      lineHeight: 1.5, width: 600, charSpacing: 20,
+    },
+  },
+];
+
+/* ── Brand Colors ── */
+
+export const BRAND_COLORS = [
+  { name: "White", hex: "#ffffff" },
+  { name: "Black", hex: "#000000" },
+  { name: "CB Red", hex: "#E31E24" },
+  { name: "Gold", hex: "#FFD700" },
+  { name: "Blue", hex: "#1E88E5" },
+  { name: "Green", hex: "#43A047" },
+  { name: "Orange", hex: "#FF6D00" },
+  { name: "Silver", hex: "#B0BEC5" },
+];
+
+/* ── Font Size Quick Presets ── */
+
+export const FONT_SIZE_PRESETS = [
+  { label: "S", size: 24 },
+  { label: "M", size: 36 },
+  { label: "L", size: 56 },
+  { label: "XL", size: 80 },
+  { label: "2XL", size: 120 },
+];
