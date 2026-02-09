@@ -18,7 +18,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   TextConfig, LogoConfig, Template, DEFAULT_TEXT, DEFAULT_LOGO, FONTS, CANVAS_PRESETS,
 } from "@/lib/types";
-import { loadTemplates, saveTemplate, deleteTemplate } from "@/lib/templates";
+import {
+  loadTemplates, saveTemplate, deleteTemplate,
+  exportTemplateAsJSON, exportAllTemplatesAsJSON, importTemplatesFromJSON,
+} from "@/lib/templates";
 
 type FabricTextAlign = "left" | "center" | "right" | "justify";
 const TEXT_SHADOW = new fabric.Shadow({ color: "rgba(0,0,0,0.6)", blur: 6, offsetX: 2, offsetY: 2 });
@@ -75,15 +78,22 @@ export default function Editor() {
   const readTextConfigs = (): TextConfig[] =>
     textObjectsRef.current.map((obj, i) => {
       const base = textConfigsRef.current[i] || DEFAULT_TEXT;
+      // Account for Fabric scaling: when user resizes via handles,
+      // Fabric changes scaleX/scaleY instead of width/fontSize.
+      const sx = obj.scaleX ?? 1;
+      const sy = obj.scaleY ?? 1;
       return {
         content: obj.text || base.content, x: obj.left ?? base.x, y: obj.top ?? base.y,
-        fontSize: obj.fontSize ?? base.fontSize, fontFamily: obj.fontFamily || base.fontFamily,
+        fontSize: Math.round((obj.fontSize ?? base.fontSize) * sy),
+        fontFamily: obj.fontFamily || base.fontFamily,
         fill: (obj.fill as string) || base.fill, backgroundColor: (obj.backgroundColor as string) || "",
         fontWeight: (obj.fontWeight as string) || base.fontWeight,
-        textAlign: (obj.textAlign as string) || base.textAlign, width: obj.width ?? base.width,
+        textAlign: (obj.textAlign as string) || base.textAlign,
+        width: Math.round((obj.width ?? base.width) * sx),
         opacity: obj.opacity ?? 1, lineHeight: obj.lineHeight ?? 1.3,
         charSpacing: obj.charSpacing ?? 0,
-        strokeColor: (obj.stroke as string) || "", strokeWidth: obj.strokeWidth ?? 0,
+        strokeColor: (obj.stroke as string) || "",
+        strokeWidth: Math.round((obj.strokeWidth ?? 0) * sy * 10) / 10,
         shadow: !!obj.shadow,
       };
     });
@@ -201,12 +211,15 @@ export default function Editor() {
       fontWeight: tc.fontWeight as "" | "bold" | "normal",
       textAlign: tc.textAlign as FabricTextAlign,
       width: tc.width, editable: true, selectable: true,
+      scaleX: 1, scaleY: 1,
       opacity: tc.opacity, lineHeight: tc.lineHeight, charSpacing: tc.charSpacing,
       stroke: tc.strokeColor || undefined, strokeWidth: tc.strokeWidth,
       shadow: tc.shadow ? TEXT_SHADOW : undefined,
       cornerStyle: "circle", cornerColor: "#4f8ef7", borderColor: "#4f8ef7",
       transparentCorners: false, padding: 6,
     });
+    tb.initDimensions();
+    tb.setCoords();
     return tb;
   }
 
@@ -257,8 +270,18 @@ export default function Editor() {
   const updateTextStyle = (idx: number, updates: Partial<TextConfig>) => {
     const obj = textObjectsRef.current[idx];
     if (!obj) return;
+    const sx = obj.scaleX ?? 1;
+    const sy = obj.scaleY ?? 1;
+
+    // When setting fontSize or strokeWidth from sidebar, the value is already
+    // the "visual" value (accounting for scale). We need to set the raw value.
+    if (updates.fontSize !== undefined) {
+      obj.set("fontSize", updates.fontSize / sy);
+    }
+    if (updates.strokeWidth !== undefined) {
+      obj.set("strokeWidth", updates.strokeWidth / sy);
+    }
     if (updates.content !== undefined) obj.set("text", updates.content);
-    if (updates.fontSize !== undefined) obj.set("fontSize", updates.fontSize);
     if (updates.fontFamily !== undefined) obj.set("fontFamily", updates.fontFamily);
     if (updates.fill !== undefined) obj.set("fill", updates.fill);
     if (updates.backgroundColor !== undefined) obj.set("backgroundColor", updates.backgroundColor || undefined);
@@ -267,10 +290,18 @@ export default function Editor() {
     if (updates.opacity !== undefined) obj.set("opacity", updates.opacity);
     if (updates.lineHeight !== undefined) obj.set("lineHeight", updates.lineHeight);
     if (updates.charSpacing !== undefined) obj.set("charSpacing", updates.charSpacing);
-    if (updates.strokeColor !== undefined) obj.set("stroke", updates.strokeColor || undefined);
-    if (updates.strokeWidth !== undefined) obj.set("strokeWidth", updates.strokeWidth);
+    if (updates.strokeColor !== undefined) {
+      obj.set("stroke", updates.strokeColor || undefined);
+      if (updates.strokeWidth === undefined && updates.strokeColor) {
+        // If adding stroke for first time, set default width accounting for scale
+        if (!obj.strokeWidth) obj.set("strokeWidth", 1 / sy);
+      }
+    }
     if (updates.shadow !== undefined) obj.set("shadow", updates.shadow ? TEXT_SHADOW : undefined);
-    fabricRef.current?.renderAll();
+
+    obj.initDimensions();
+    obj.setCoords();
+    fabricRef.current?.requestRenderAll();
     tick();
   };
 
@@ -325,14 +356,18 @@ export default function Editor() {
   const getSelectedText = (): TextConfig | null => {
     const obj = textObjectsRef.current[selectedTextIdx];
     if (!obj) return null;
+    const sx = obj.scaleX ?? 1;
+    const sy = obj.scaleY ?? 1;
     return {
       content: obj.text || "", x: obj.left ?? 0, y: obj.top ?? 0,
-      fontSize: obj.fontSize ?? 32, fontFamily: obj.fontFamily || "Arial",
+      fontSize: Math.round((obj.fontSize ?? 32) * sy),
+      fontFamily: obj.fontFamily || "Arial",
       fill: (obj.fill as string) || "#ffffff", backgroundColor: (obj.backgroundColor as string) || "",
       fontWeight: (obj.fontWeight as string) || "bold", textAlign: (obj.textAlign as string) || "center",
-      width: obj.width ?? 500, opacity: obj.opacity ?? 1, lineHeight: obj.lineHeight ?? 1.3,
+      width: Math.round((obj.width ?? 500) * sx), opacity: obj.opacity ?? 1,
+      lineHeight: obj.lineHeight ?? 1.3,
       charSpacing: obj.charSpacing ?? 0, strokeColor: (obj.stroke as string) || "",
-      strokeWidth: obj.strokeWidth ?? 0, shadow: !!obj.shadow,
+      strokeWidth: Math.round((obj.strokeWidth ?? 0) * sy * 10) / 10, shadow: !!obj.shadow,
     };
   };
 
@@ -651,6 +686,32 @@ export default function Editor() {
               <Input placeholder="Name..." value={templateName} onChange={(e) => setTemplateName(e.target.value)} className="h-8 text-xs" />
               <Button onClick={handleSaveTemplate} disabled={!templateName.trim()} className="h-8 text-xs px-3 shrink-0">Save</Button>
             </div>
+
+            {/* Import / Export all */}
+            <div className="flex gap-1.5">
+              <label className="flex-1">
+                <div className="flex items-center justify-center gap-1 border border-dashed rounded h-7 cursor-pointer hover:border-primary transition-colors text-[10px] text-muted-foreground">
+                  Import .json
+                </div>
+                <Input type="file" accept=".json" className="hidden" onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  try {
+                    await importTemplatesFromJSON(f);
+                    setTemplates(loadTemplates());
+                  } catch (err) {
+                    alert(err instanceof Error ? err.message : "Import failed");
+                  }
+                  e.target.value = "";
+                }} />
+              </label>
+              {templates.length > 0 && (
+                <Button variant="outline" className="h-7 text-[10px] px-2" onClick={exportAllTemplatesAsJSON}>
+                  Export All
+                </Button>
+              )}
+            </div>
+
             {templates.length === 0 && <p className="text-xs text-muted-foreground">No templates yet.</p>}
             {templates.map((t) => (
               <div key={t.id} className="flex items-center justify-between border rounded px-2 py-1.5">
@@ -659,6 +720,9 @@ export default function Editor() {
                   <p className="text-[10px] text-muted-foreground">{t.canvasWidth}x{t.canvasHeight}</p>
                 </div>
                 <div className="flex gap-1 shrink-0">
+                  <Button size="sm" variant="ghost" className="h-6 px-1 text-[10px]" onClick={() => exportTemplateAsJSON(t)} title="Share">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                  </Button>
                   <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => handleApplyTemplate(t)}>Apply</Button>
                   <Button size="sm" variant="ghost" className="h-6 px-1 text-xs" onClick={() => handleDeleteTemplate(t.id)}>x</Button>
                 </div>
