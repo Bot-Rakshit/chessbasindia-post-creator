@@ -25,11 +25,30 @@ export interface LogoConfig {
   opacity: number;
 }
 
+export type GradientDirection = "bottom" | "top" | "left" | "right";
+
+export interface GradientConfig {
+  enabled: boolean;
+  direction: GradientDirection;
+  opacity: number;
+  color: string;
+  coverage: number; // 0-100, how much of the canvas the gradient covers
+}
+
+export const DEFAULT_GRADIENT: GradientConfig = {
+  enabled: false,
+  direction: "bottom",
+  opacity: 0.7,
+  color: "#000000",
+  coverage: 60,
+};
+
 export interface Template {
   id: string;
   name: string;
   textConfigs: TextConfig[];
   logoConfig: LogoConfig;
+  gradientConfig?: GradientConfig;
   canvasWidth: number;
   canvasHeight: number;
   bgColor: string;

@@ -16,7 +16,8 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  TextConfig, LogoConfig, Template, DEFAULT_TEXT, DEFAULT_LOGO, FONTS, CANVAS_PRESETS,
+  TextConfig, LogoConfig, GradientConfig, GradientDirection, Template,
+  DEFAULT_TEXT, DEFAULT_LOGO, DEFAULT_GRADIENT, FONTS, CANVAS_PRESETS,
 } from "@/lib/types";
 import {
   loadTemplates, saveTemplate, deleteTemplate,
@@ -41,6 +42,7 @@ export default function Editor() {
   const [activeTab, setActiveTab] = useState("design");
   const [bgColor, setBgColor] = useState("#1a1a1a");
   const [imagePadding, setImagePadding] = useState(0);
+  const [gradientConfig, setGradientConfig] = useState<GradientConfig>({ ...DEFAULT_GRADIENT });
 
   const [, setRenderTick] = useState(0);
   const tick = () => setRenderTick((n) => n + 1);
@@ -51,6 +53,8 @@ export default function Editor() {
   const logoObjectRef = useRef<fabric.FabricImage | null>(null);
   const imageObjectRef = useRef<fabric.FabricImage | null>(null);
   const imageFileRef = useRef<string | null>(null);
+  const gradientObjectRef = useRef<fabric.Rect | null>(null);
+  const gradientConfigRef = useRef<GradientConfig>({ ...DEFAULT_GRADIENT });
   // Store padding/bgColor in refs so async callbacks always see latest
   const imagePaddingRef = useRef(0);
   const bgColorRef = useRef("#1a1a1a");
@@ -59,6 +63,7 @@ export default function Editor() {
   imagePaddingRef.current = imagePadding;
   bgColorRef.current = bgColor;
   canvasSizeRef.current = canvasSize;
+  gradientConfigRef.current = gradientConfig;
 
   useEffect(() => { setTemplates(loadTemplates()); }, []);
 
@@ -149,6 +154,13 @@ export default function Editor() {
   }, [imagePadding]);
 
   useEffect(() => {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    syncGradient(canvas);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gradientConfig]);
+
+  useEffect(() => {
     window.addEventListener("resize", fitCanvasToContainer);
     return () => window.removeEventListener("resize", fitCanvasToContainer);
   }, [fitCanvasToContainer]);
@@ -164,18 +176,22 @@ export default function Editor() {
 
   function rebuildCanvas(canvas: fabric.Canvas) {
     textObjectsRef.current = [];
+    gradientObjectRef.current = null;
     textConfigsRef.current.forEach((tc, i) => addTextToCanvas(canvas, tc, i));
     if (logoEnabled) addLogoToCanvas(canvas, logoConfigRef.current);
     if (imageFileRef.current) {
       const url = imageFileRef.current;
       fabric.FabricImage.fromURL(url).then((img) => {
-        if (fabricRef.current !== canvas) return; // canvas was disposed
+        if (fabricRef.current !== canvas) return;
         applyImagePadding(img);
         canvas.add(img);
         canvas.sendObjectToBack(img);
         imageObjectRef.current = img;
+        syncGradient(canvas);
         canvas.renderAll();
       });
+    } else {
+      syncGradient(canvas);
     }
     canvas.renderAll();
   }
@@ -202,6 +218,86 @@ export default function Editor() {
     } else {
       img.set({ clipPath: undefined });
     }
+  }
+
+  function makeGradientRect(gc: GradientConfig, w: number, h: number): fabric.Rect {
+    const rect = new fabric.Rect({
+      left: 0, top: 0, width: w, height: h,
+      selectable: false, evented: false, excludeFromExport: false,
+    });
+
+    // Calculate gradient coordinates based on direction and coverage
+    const coverageFraction = gc.coverage / 100;
+    let coords: { x1: number; y1: number; x2: number; y2: number };
+    switch (gc.direction) {
+      case "bottom":
+        coords = { x1: 0, y1: h, x2: 0, y2: h * (1 - coverageFraction) };
+        break;
+      case "top":
+        coords = { x1: 0, y1: 0, x2: 0, y2: h * coverageFraction };
+        break;
+      case "left":
+        coords = { x1: 0, y1: 0, x2: w * coverageFraction, y2: 0 };
+        break;
+      case "right":
+        coords = { x1: w, y1: 0, x2: w * (1 - coverageFraction), y2: 0 };
+        break;
+    }
+
+    // Convert hex color to rgba with opacity
+    const hexToRgba = (hex: string, a: number) => {
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      return `rgba(${r},${g},${b},${a})`;
+    };
+
+    const gradient = new fabric.Gradient({
+      type: "linear",
+      gradientUnits: "pixels",
+      coords,
+      colorStops: [
+        { offset: 0, color: hexToRgba(gc.color, gc.opacity) },
+        { offset: 1, color: hexToRgba(gc.color, 0) },
+      ],
+    });
+
+    rect.set("fill", gradient);
+    return rect;
+  }
+
+  function syncGradient(canvas: fabric.Canvas) {
+    // Remove old gradient
+    if (gradientObjectRef.current) {
+      canvas.remove(gradientObjectRef.current);
+      gradientObjectRef.current = null;
+    }
+
+    const gc = gradientConfigRef.current;
+    if (!gc.enabled) return;
+
+    const sz = canvasSizeRef.current;
+    const rect = makeGradientRect(gc, sz.width, sz.height);
+    canvas.add(rect);
+
+    // Position gradient above image but below text/logo
+    // Send to back first, then move above image if present
+    canvas.sendObjectToBack(rect);
+    if (imageObjectRef.current) {
+      // Gradient should be just above the image
+      const objects = canvas.getObjects();
+      const imgIdx = objects.indexOf(imageObjectRef.current);
+      const gradIdx = objects.indexOf(rect);
+      if (imgIdx >= 0 && gradIdx < imgIdx) {
+        // Move gradient up to be right after image
+        for (let j = gradIdx; j < imgIdx; j++) {
+          canvas.bringObjectForward(rect);
+        }
+      }
+    }
+
+    gradientObjectRef.current = rect;
+    canvas.renderAll();
   }
 
   function makeTextbox(tc: TextConfig): fabric.Textbox {
@@ -261,6 +357,7 @@ export default function Editor() {
         canvas.add(img);
         canvas.sendObjectToBack(img);
         imageObjectRef.current = img;
+        syncGradient(canvas);
         canvas.renderAll();
       });
     };
@@ -379,6 +476,7 @@ export default function Editor() {
     saveTemplate({
       id: Date.now().toString(), name: templateName,
       textConfigs: readTextConfigs(), logoConfig: readLogoConfig(),
+      gradientConfig: { ...gradientConfig },
       canvasWidth: canvasSize.width, canvasHeight: canvasSize.height,
       bgColor, imagePadding,
     });
@@ -392,6 +490,7 @@ export default function Editor() {
     setLogoEnabled(template.logoConfig.enabled);
     setBgColor(template.bgColor || "#1a1a1a");
     setImagePadding(template.imagePadding || 0);
+    setGradientConfig(template.gradientConfig ? { ...template.gradientConfig } : { ...DEFAULT_GRADIENT });
     if (canvasSize.width === template.canvasWidth && canvasSize.height === template.canvasHeight) {
       const canvas = fabricRef.current;
       if (canvas) {
@@ -452,6 +551,9 @@ export default function Editor() {
         img.set({ clipPath: new fabric.Rect({ width: availW / s, height: availH / s, originX: "center", originY: "center" }) });
       }
       oc.add(img);
+      if (gradientConfig.enabled) {
+        oc.add(makeGradientRect(gradientConfig, canvasSize.width, canvasSize.height));
+      }
       for (const tc of txts) { oc.add(makeTextbox(tc)); }
       if (logo.enabled) {
         const li = await fabric.FabricImage.fromURL("/chessbase-logo.svg");
@@ -527,6 +629,46 @@ export default function Editor() {
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* Gradient overlay */}
+            <div>
+              <div className="flex items-center justify-between">
+                <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Gradient Overlay</Label>
+                <input type="checkbox" checked={gradientConfig.enabled}
+                  onChange={(e) => setGradientConfig((g) => ({ ...g, enabled: e.target.checked }))} className="accent-primary" />
+              </div>
+              {gradientConfig.enabled && (
+                <div className="space-y-1.5 mt-1">
+                  <div className="flex gap-1">
+                    {(["bottom", "top", "left", "right"] as const).map((d) => (
+                      <button key={d}
+                        className={`flex-1 py-1 rounded text-[10px] ${gradientConfig.direction === d ? "bg-primary text-primary-foreground" : "bg-muted"}`}
+                        onClick={() => setGradientConfig((g) => ({ ...g, direction: d as GradientDirection }))}>
+                        {d.charAt(0).toUpperCase() + d.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input type="color" value={gradientConfig.color}
+                      onChange={(e) => setGradientConfig((g) => ({ ...g, color: e.target.value }))}
+                      className="w-6 h-6 rounded border cursor-pointer p-0" />
+                    <div className="flex-1">
+                      <div className="flex justify-between text-[10px] text-muted-foreground"><span>Opacity</span><span>{Math.round(gradientConfig.opacity * 100)}%</span></div>
+                      <Slider value={[gradientConfig.opacity * 100]}
+                        onValueChange={([v]) => setGradientConfig((g) => ({ ...g, opacity: v / 100 }))}
+                        min={10} max={100} step={5} />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-muted-foreground w-12 shrink-0">Coverage</span>
+                    <Slider value={[gradientConfig.coverage]}
+                      onValueChange={([v]) => setGradientConfig((g) => ({ ...g, coverage: v }))}
+                      min={10} max={100} step={5} className="flex-1" />
+                    <span className="text-[10px] text-muted-foreground w-7 text-right">{gradientConfig.coverage}%</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Text */}
