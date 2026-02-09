@@ -255,6 +255,23 @@ export function useCanvas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /** Apply color to just the selected characters (if editing with a selection) */
+  const setSelectionColor = useCallback((idx: number, color: string): boolean => {
+    const obj = textObjectsRef.current[idx]; if (!obj) return false;
+    if (obj.isEditing && obj.selectionStart !== obj.selectionEnd) {
+      obj.setSelectionStyles({ fill: color });
+      fabricRef.current?.requestRenderAll(); tick();
+      return true;
+    }
+    return false;
+  }, [tick]);
+
+  /** Check if the selected textbox has an active character selection */
+  const hasTextSelection = useCallback((): boolean => {
+    const obj = textObjectsRef.current[selectedTextIdx]; if (!obj) return false;
+    return obj.isEditing && obj.selectionStart !== obj.selectionEnd;
+  }, [selectedTextIdx]);
+
   const updateTextStyle = useCallback((idx: number, updates: Partial<TextConfig>) => {
     const obj = textObjectsRef.current[idx]; if (!obj) return;
     const base = textConfigsRef.current[idx] || DEFAULT_TEXT;
@@ -515,6 +532,7 @@ export function useCanvas() {
     tick,
     makeFadeRect: makeFadeRect,
     makeTextbox: makeTextbox,
-    undo, redo, duplicateTextLayer, alignTextToCanvas, deselectAll, nudgeSelected, canvasSizeRef,
+    undo, redo, duplicateTextLayer, alignTextToCanvas, deselectAll, nudgeSelected,
+    setSelectionColor, hasTextSelection, canvasSizeRef,
   };
 }

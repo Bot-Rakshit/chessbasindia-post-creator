@@ -23,6 +23,7 @@ interface Props {
   onDuplicate?: () => void;
   onApplyPreset?: (preset: Partial<TextConfig>) => void;
   onAlign?: (alignment: string) => void;
+  onSelectionColor?: (idx: number, color: string) => boolean;
 }
 
 const DIRS: GradientDirection[] = ["left", "right", "top", "bottom"];
@@ -39,7 +40,7 @@ const WEIGHTS = [
 export default function TextPanel({
   textCount, selectedIdx, ct, curTg, textConfigs,
   onSelectIdx, onAdd, onRemove, onUpdate, onSetGradient,
-  onDuplicate, onApplyPreset, onAlign,
+  onDuplicate, onApplyPreset, onAlign, onSelectionColor,
 }: Props) {
   const [showMore, setShowMore] = useState(false);
 
@@ -103,8 +104,15 @@ export default function TextPanel({
           {/* Color + Text align */}
           <div className="flex items-center gap-1.5">
             <input type="color" value={ct.fill}
-              onChange={e => { onUpdate(selectedIdx, { fill: e.target.value }); if (curTg?.enabled) onSetGradient(selectedIdx, undefined); }}
-              className="w-6 h-6 rounded border cursor-pointer p-0" title="Text color" />
+              onChange={e => {
+                const color = e.target.value;
+                // If there's an active text selection, color only that selection
+                if (onSelectionColor && onSelectionColor(selectedIdx, color)) return;
+                // Otherwise color the whole text
+                onUpdate(selectedIdx, { fill: color });
+                if (curTg?.enabled) onSetGradient(selectedIdx, undefined);
+              }}
+              className="w-6 h-6 rounded border cursor-pointer p-0" title="Text color (select text on canvas to color individual words)" />
             <div className="flex gap-0.5 flex-1">
               {(["left", "center", "right"] as const).map(a => (
                 <button key={a} className={`flex-1 py-1 rounded text-[10px] ${ct.textAlign === a ? "bg-primary text-primary-foreground" : "bg-muted"}`}

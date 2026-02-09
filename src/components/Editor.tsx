@@ -240,6 +240,7 @@ export default function Editor() {
                 onDuplicate={engine.duplicateTextLayer}
                 onApplyPreset={(preset) => engine.updateTextStyle(engine.selectedTextIdx, preset)}
                 onAlign={engine.alignTextToCanvas}
+                onSelectionColor={engine.setSelectionColor}
               />
 
               <div className="h-px bg-border" />
