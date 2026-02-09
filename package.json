@@ -1,7 +1,13 @@
 {
-  "name": "chessbase-social",
-  "version": "0.1.0",
-  "private": true,
+  "name": "chessbase-social-post-creator",
+  "version": "1.0.0",
+  "description": "Browser-based social media post creator for chess content. Upload photos, add styled text, apply overlays, and export.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Bot-Rakshit/chessbasindia-post-creator.git"
+  },
+  "keywords": ["chess", "chessbase", "social-media", "post-creator", "fabric.js", "nextjs", "canvas-editor"],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
